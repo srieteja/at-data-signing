@@ -1,166 +1,118 @@
-import 'dart:collection';
 import 'dart:convert';
 import 'dart:typed_data';
-
-import 'package:at_commons/at_commons.dart';
 import 'package:at_data_signing/service/at_data_signing.dart';
 import 'package:at_data_signing/util/exceptions.dart';
-import 'package:at_data_signing/util/sign_for_type.dart';
-import 'package:at_data_signing/util/signature.dart';
 import 'package:at_data_signing/util/signature_input.dart';
-import 'package:at_data_signing/util/signature_output.dart';
+import 'package:at_data_signing/util/signature.dart' as local;
+import 'package:at_data_signing/util/signature_algorithm.dart';
 import 'package:at_data_signing/util/signature_verification_result.dart';
-import 'package:at_data_signing/util/verified_by.dart';
-import 'package:at_utils/at_utils.dart';
-import 'package:crypton/crypton.dart';
+import 'package:crypton/crypton.dart' as crypton;
+import 'package:pointycastle/export.dart';
 
 class AtDataSigningImpl implements AtDataSigning {
-  AtSignLogger logger = AtSignLogger('AtDataSigning');
   @override
-  // AtValue signAtData(AtValue atValue, String privateKey, String publicKey) {
-  //   RSAPrivateKey rsaKey = RSAPrivateKey.fromString(privateKey);
-  //   Map<String, String> signatureMap = HashMap<String, String>();
-  //   signatureMap[SignForType.clearText.name] =
-  //       _getSignature(atValue.value, rsaKey).toString();
-  //   signatureMap[SignForType.cipherText.name] =
-  //       _getSignature(atValue.value, rsaKey).toString();
-  //   atValue.metadata?.dataSignature =
-  //       base64Encode(utf8.encode(jsonEncode(signatureMap)) as Uint8List);
-  //   return atValue;
-  // }
+  String signString(String data, String privateKey,
+      SignatureAlgorithm algorithm, int digestLength) {
+    return _getSignatureInteral(data, privateKey, algorithm, digestLength);
+  }
 
-  Signature _getSignature(String value, RSAPrivateKey privateKey) {
-    var signBase64 = base64Encode(
-        privateKey.createSHA512Signature(utf8.encode(value) as Uint8List));
-    Signature signature = Signature()
+  @override
+  local.Signature signWithObject(SignatureInput signatureInput) {
+    String signBase64 = _getSignatureInteral(
+        signatureInput.textToSign,
+        signatureInput.privateKey,
+        signatureInput.algorithm,
+        signatureInput.digestLength);
+
+    return local.Signature()
+      ..actualText = signatureInput.textToSign
       ..signature = signBase64
-      ..algorithm = 'SHA-3/512'
-      ..signatureTimestamp = DateTime.now().toUtc();
-    return signature;
-  }
-
-  String _getStringSignature(
-      String data, String privateKey, String algorithm, int digestLength) {
-    RSAPrivateKey rsaPrivateKey = RSAPrivateKey.fromString(privateKey);
-    return base64Encode(
-        rsaPrivateKey.createSHA512Signature(utf8.encode(data) as Uint8List));
-  }
-
-  // @override
-  // SignatureVerificationResult verifySignature(
-  //     AtValue signedAtValue, String verifierAtsign, String verifierPrivateKey,
-  //     {String? publicKey}) {
-  //   Map<String, dynamic>? signatureMap;
-  //   Uint8List? oldFormatSignature;
-  //   SignatureVerificationResult result = SignatureVerificationResult();
-  //   bool isJsonTypeSign = false;
-
-  //   //ensure dataSignature field is not empty
-  //   if (signedAtValue.metadata?.dataSignature == null) {
-  //     result.isVerified = false;
-  //     result.exception = SignatureNotFound();
-  //     return result;
-  //   }
-
-  //   //try to decode json into a Map<string, dynamic> format which is used currently.
-  //   //
-  //   //If that does not work, assume the signature does not use the new convention and
-  //   //directly use it without the need of converting into a Signature() object.
-  //   //The on Exception case is present to provide backwards compatability.
-  //   try {
-  //     signatureMap = jsonDecode(
-  //         utf8.decode(base64Decode(signedAtValue.metadata!.dataSignature!)));
-  //     isJsonTypeSign = true;
-  //   } on Exception catch (e) {
-  //     logger.finer(e);
-  //     oldFormatSignature = base64Decode(signedAtValue.metadata!.dataSignature!);
-  //   }
-
-  //   //if isJsonTypeSign is false, it is assumed that the dataSignature does not use Signature() object
-  //   //this case is provided for backwards compatability
-  //   if (!isJsonTypeSign) {
-  //     if (publicKey == null) {
-  //       logger.severe(
-  //           'PublicKey is not encoded in AtValue.metadata.dataSignature.'
-  //           'Since PublicKey is not found, must be provided as method parameter');
-  //       result.isVerified = false;
-  //       result.exception = PublicKeyNotFound();
-  //       return result;
-  //     }
-  //     result = _verifySignatureInternal(signedAtValue.value,
-  //         oldFormatSignature!, publicKey, verifierAtsign, verifierPrivateKey);
-  //   }
-  //   //if isJsonTypeSign is true, it is assumed that the dataSignature is of type Map<String, dynamic>
-  //   else {
-  //     //the below for-each snipped converts all the raw signature to Singature() objects
-  //     signatureMap?.forEach((key, value) {
-  //       if (key != 'publicKey') {
-  //         value = Signature.fromJson(value);
-  //       }
-  //     });
-  //     result = _verifySignatureInternal(
-  //         signedAtValue.value,
-  //         signatureMap![SignForType.clearText],
-  //         signatureMap['publicKey'],
-  //         verifierAtsign,
-  //         verifierPrivateKey);
-  //   }
-
-  //   if (!result.isVerified) {
-  //     result.exception = SignatureMismatch();
-  //   }
-
-  //   return result;
-  // }
-
-  SignatureVerificationResult _verifySignatureInternal(
-      String data,
-      Uint8List signature,
-      String publicKey,
-      String verifierAtsign,
-      String verifierPrivateKey) {
-    RSAPublicKey rsaPublicKey = RSAPublicKey.fromString(publicKey);
-    return SignatureVerificationResult()
-      ..isVerified = rsaPublicKey.verifySHA512Signature(
-          utf8.encode(data) as Uint8List, signature)
-      ..actualSignature = base64Encode(signature);
-  }
-
-  @override
-  String signData(
-      String data, String privateKey, String algorithm, int digestLength) {
-    return _getStringSignature(data, privateKey, algorithm, digestLength);
-  }
-
-  @override
-  SignatureOutput signAtData(SignatureInput signatureInput) {
-    Map<String, String> signatureMap = {};
-    Map<SignForType, String> inputs = {};
-    if (signatureInput.clearText != null) {
-      inputs[SignForType.clearText] = (signatureInput.clearText!);
-    }
-    if (signatureInput.cipherText != null) {
-      inputs[SignForType.cipherText] = (signatureInput.cipherText!);
-    }
-    if (signatureInput.metaDataAsString != null) {
-      inputs[SignForType.metaData] = (signatureInput.metaDataAsString!);
-    }
-    String signBase64;
-    inputs.forEach((key, value) {
-      signBase64 = _getStringSignature(value, signatureInput.privateKey,
-          signatureInput.algorithm, signatureInput.digestLength);
-      signatureMap[key.toString()] = signBase64;
-    });
-    return SignatureOutput()
-      ..signatureMap = signatureMap
       ..signatureTimestamp = DateTime.now().toUtc()
-      ..signedBy = signatureInput.signedBy;
+      ..signedBy = signatureInput.signedBy
+      ..signatureSpecification =
+          signatureInput.algorithm.getAlgorithm(signatureInput.digestLength);
   }
 
   @override
-  bool verifySignature(String data, String signature, String publicKey) {
-    RSAPublicKey rsaPublicKey = RSAPublicKey.fromString(publicKey);
-    return rsaPublicKey.verifySHA512Signature(
-        utf8.encode(data) as Uint8List, base64Decode(signature));
+  bool verifySignature(String data, String signature, String publicKey,
+      SignatureAlgorithm algorithm, int digestLength) {
+    return _verifySignatureInternal(
+        data, signature, publicKey, algorithm, digestLength);
+  }
+
+  @override
+  SignatureVerificationResult verifySignatureObj(
+      local.Signature signature, String publicKey) {
+    SignatureSpecification spec = SignatureAlgorithmExtension.parseString(
+        signature.signatureSpecification);
+    SignatureVerificationResult result = SignatureVerificationResult();
+    result.isVerified = _verifySignatureInternal(signature.actualText,
+        signature.signature, publicKey, spec.algorithm, spec.length);
+    result.actualSignature = signature.signature;
+    result.exception = SignatureMismatch();
+    return result;
+  }
+
+  ///Method that formats input parameters from [signString] and [signWithObject] and calls [_generateRsaSign]
+  String _getSignatureInteral(String data, String privateKey,
+      SignatureAlgorithm algorithm, int digestLength) {
+    _verifyDigestLength(digestLength);
+    RSAPrivateKey rsaPrivateKey =
+        crypton.RSAPrivateKey.fromString(privateKey).asPointyCastle;
+    return base64Encode(_generateRsaSign(rsaPrivateKey,
+        utf8.encode(data) as Uint8List, _getSigner(algorithm, digestLength)));
+  }
+
+  ///Method that formats input parameters from [verifySignature] and [verifySignatureObj] and calls [_verifyRsaSignature]
+  bool _verifySignatureInternal(String data, String signature, String publicKey,
+      SignatureAlgorithm algorithm, int digestLength) {
+    _verifyDigestLength(digestLength);
+    RSAPublicKey rsaPublicKey =
+        crypton.RSAPublicKey.fromString(publicKey).asPointyCastle;
+    return _verifyRsaSignature(
+        rsaPublicKey,
+        utf8.encode(signature) as Uint8List,
+        utf8.encode(data) as Uint8List,
+        _getSigner(algorithm, digestLength));
+  }
+
+  ///selects a [RSASigner] object based on [SignatureAlgorithm] and [digestLength]
+  RSASigner _getSigner(SignatureAlgorithm algorithm, int digestLength) {
+    if (algorithm == SignatureAlgorithm.sha2 && digestLength == 256) {
+      return RSASigner(SHA256Digest(), '0609608648016503040201');
+    } else if (algorithm == SignatureAlgorithm.sha2 && digestLength == 512) {
+      return RSASigner(SHA512Digest(), '0609608648016503040203');
+    } else if (algorithm == SignatureAlgorithm.sha3 && digestLength == 256) {
+      return RSASigner(SHA256Digest(), '0609608648016503040201');
+    }
+    return RSASigner(SHA512Digest(), '0609608648016503040203');
+  }
+
+  ///Actual logic to generate an RSASignature using [RSAPrivateKey]
+  Uint8List _generateRsaSign(
+      RSAPrivateKey privateKey, Uint8List dataToSign, RSASigner signer) {
+    //init RSASigner with forSigning=trure to sign data
+    signer.init(true, PrivateKeyParameter<PrivateKey>(privateKey));
+    return signer.generateSignature(dataToSign) as Uint8List;
+  }
+
+  ///Actual logic to verify [RSASignature] with [data] using [RSAPublicKey]
+  bool _verifyRsaSignature(RSAPublicKey publicKey, Uint8List signature,
+      Uint8List data, RSASigner verifier) {
+    final sign = RSASignature(signature);
+    //init RSASigner object with forSigning=false to verify signature
+    verifier.init(false, PublicKeyParameter<PublicKey>(publicKey));
+    try {
+      return verifier.verifySignature(data, sign);
+    } on ArgumentError {
+      return false;
+    }
+  }
+
+  ///Method that ensures that the digestLength input to any caller method is 256/512
+  void _verifyDigestLength(int length) {
+    if (length != 256 && length != 512) {
+      throw InvalidArgument(length);
+    }
   }
 }

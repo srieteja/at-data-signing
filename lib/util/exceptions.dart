@@ -11,3 +11,10 @@ class PublicKeyNotFound implements Exception {
   String message =
       'PublicKey not provided, which is required to verify signature';
 }
+
+class InvalidArgument implements Exception {
+  late String message;
+  InvalidArgument(dynamic value) {
+    message = '$value is an invalid argument';
+  }
+}
